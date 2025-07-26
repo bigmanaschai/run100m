@@ -1,6 +1,10 @@
+# Minimal requirements for Streamlit Cloud
 streamlit
 pandas
 numpy
 plotly
 xlsxwriter
-opencv-python-headless
+
+# Note: To enable YOLOv11, users can install locally:
+# pip install ultralytics
+# This will automatically install PyTorch and other dependencies
