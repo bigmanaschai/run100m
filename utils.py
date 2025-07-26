@@ -6,8 +6,16 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
 from io import BytesIO
-import xlsxwriter
 from config import Config
+
+# Try different import methods for xlsxwriter
+try:
+    import xlsxwriter
+except ImportError:
+    try:
+        import XlsxWriter as xlsxwriter
+    except ImportError:
+        print("Warning: xlsxwriter not available. Excel export will use default engine.")
 
 
 class Visualizer:

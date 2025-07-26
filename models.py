@@ -2,9 +2,17 @@
 
 import numpy as np
 import pandas as pd
-import cv2
 from config import Config
 import os
+
+# Try to import cv2, but don't fail if it's not available
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    print("Warning: OpenCV not available. Video processing features will be limited.")
 
 
 class RunningAnalysisModel:
@@ -99,6 +107,10 @@ class RunningAnalysisModel:
             List of frame images
         """
         frames = []
+
+        if not CV2_AVAILABLE:
+            print("OpenCV not available. Skipping frame extraction.")
+            return frames
 
         if not os.path.exists(video_path):
             return frames
