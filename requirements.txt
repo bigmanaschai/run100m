@@ -1,17 +1,6 @@
-# Step 1: Core dependencies
-streamlit==1.31.1
-pandas==2.1.4
-numpy==1.26.3
-
-# Step 2: Visualization and Export
-plotly==5.18.0
-XlsxWriter==3.1.9
-
-# Step 3: Basic OpenCV (without YOLO first)
-opencv-python-headless==4.9.0.80
-Pillow==10.2.0
-
-# Step 4: YOLO dependencies (add these later if needed)
-#ultralytics==8.2.0
-#torch>=2.0.0
-#torchvision>=0.15.0
+streamlit
+pandas
+numpy
+plotly
+xlsxwriter
+opencv-python-headless
