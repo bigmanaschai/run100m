@@ -12,6 +12,6 @@ opencv-python-headless==4.9.0.80
 Pillow==10.2.0
 
 # Step 4: YOLO dependencies (add these later if needed)
-ultralytics==8.2.0
-torch>=2.0.0
-torchvision>=0.15.0
+#ultralytics==8.2.0
+#torch>=2.0.0
+#torchvision>=0.15.0
