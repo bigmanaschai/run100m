@@ -17,7 +17,6 @@ YOLO_AVAILABLE = False
 try:
     from ultralytics import YOLO, solutions
     import cv2
-
     YOLO_AVAILABLE = True
 except ImportError:
     pass
@@ -106,74 +105,32 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_id = None
     st.session_state.coach_id = None
 
-
 # Database setup
 def init_db():
     conn = sqlite3.connect('running_performance.db')
     c = conn.cursor()
 
     c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     username
-                     TEXT
-                     UNIQUE
-                     NOT
-                     NULL,
-                     password
-                     TEXT
-                     NOT
-                     NULL,
-                     user_type
-                     TEXT
-                     NOT
-                     NULL,
-                     coach_id
-                     INTEGER,
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT UNIQUE NOT NULL,
+                  password TEXT NOT NULL,
+                  user_type TEXT NOT NULL,
+                  coach_id INTEGER,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS performance_data
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     runner_id
-                     INTEGER
-                     NOT
-                     NULL,
-                     coach_id
-                     INTEGER,
-                     test_date
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP,
-                     range_0_25_data
-                     TEXT,
-                     range_25_50_data
-                     TEXT,
-                     range_50_75_data
-                     TEXT,
-                     range_75_100_data
-                     TEXT,
-                     max_speed
-                     REAL,
-                     avg_speed
-                     REAL,
-                     total_time
-                     REAL,
-                     analysis_method
-                     TEXT
-                 )''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  runner_id INTEGER NOT NULL,
+                  coach_id INTEGER,
+                  test_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  range_0_25_data TEXT,
+                  range_25_50_data TEXT,
+                  range_50_75_data TEXT,
+                  range_75_100_data TEXT,
+                  max_speed REAL,
+                  avg_speed REAL,
+                  total_time REAL,
+                  analysis_method TEXT)''')
 
     # Add default admin
     try:
@@ -185,9 +142,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-
 init_db()
-
 
 # YOLOv11 processing with solutions.Inference
 def process_video_with_yolo11(video_file, range_type):
@@ -290,7 +245,6 @@ def process_video_with_yolo11(video_file, range_type):
             os.unlink(video_path)
         return generate_simulated_data(range_type)
 
-
 def extract_detections_from_results(results, range_type):
     """Extract detections from YOLOv11 results"""
     detections = []
@@ -300,7 +254,6 @@ def extract_detections_from_results(results, range_type):
     # For now, returning empty list as fallback
 
     return detections
-
 
 def convert_detections_to_performance(detections, range_type):
     """Convert YOLO detections to performance data format"""
@@ -334,7 +287,6 @@ def convert_detections_to_performance(detections, range_type):
 
     # Create sparse format output
     return create_sparse_format(df, range_type)
-
 
 def create_sparse_format(df, range_type):
     """Convert continuous data to sparse format matching expected output"""
@@ -383,7 +335,6 @@ def create_sparse_format(df, range_type):
 
     return pd.DataFrame(sparse_data)
 
-
 def generate_simulated_data(range_type):
     """Generate simulated performance data"""
     range_start = int(range_type.split('-')[0])
@@ -415,7 +366,6 @@ def generate_simulated_data(range_type):
 
     return pd.DataFrame(data)
 
-
 # Authentication functions
 def authenticate_user(username, password):
     conn = sqlite3.connect('running_performance.db')
@@ -425,7 +375,6 @@ def authenticate_user(username, password):
     result = c.fetchone()
     conn.close()
     return result
-
 
 def register_user(username, password, user_type, coach_id=None):
     conn = sqlite3.connect('running_performance.db')
@@ -439,7 +388,6 @@ def register_user(username, password, user_type, coach_id=None):
     except:
         conn.close()
         return False
-
 
 # Visualization functions
 def create_position_speed_plot(data_dict):
@@ -479,7 +427,6 @@ def create_position_speed_plot(data_dict):
 
     return fig
 
-
 def generate_excel_report(data_dict, runner_name, metrics):
     output = BytesIO()
 
@@ -487,11 +434,11 @@ def generate_excel_report(data_dict, runner_name, metrics):
         # Summary sheet
         summary_data = {
             'Metric': ['Runner Name', 'Test Date', 'Max Speed (m/s)', 'Avg Speed (m/s)',
-                       'Total Distance (m)', 'Test Duration (s)', 'Analysis Method'],
+                      'Total Distance (m)', 'Test Duration (s)', 'Analysis Method'],
             'Value': [runner_name, datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                      f"{metrics['max_speed']:.2f}", f"{metrics['avg_speed']:.2f}",
-                      '100', f"{metrics['total_time']:.2f}",
-                      'YOLOv11' if YOLO_AVAILABLE else 'Simulated']
+                     f"{metrics['max_speed']:.2f}", f"{metrics['avg_speed']:.2f}",
+                     '100', f"{metrics['total_time']:.2f}",
+                     'YOLOv11' if YOLO_AVAILABLE else 'Simulated']
         }
 
         summary_df = pd.DataFrame(summary_data)
@@ -504,7 +451,6 @@ def generate_excel_report(data_dict, runner_name, metrics):
 
     output.seek(0)
     return output
-
 
 # Main application
 def main():
@@ -698,7 +644,7 @@ def main():
                         columns = ', '.join(db_data.keys())
                         placeholders = ', '.join(['?' for _ in db_data])
                         c.execute(f"INSERT INTO performance_data ({columns}) VALUES ({placeholders})",
-                                  list(db_data.values()))
+                                 list(db_data.values()))
                         conn.commit()
                         conn.close()
 
@@ -741,23 +687,22 @@ def main():
             conn = sqlite3.connect('running_performance.db')
 
             if st.session_state.user_type == 'admin':
-                query = """SELECT p.*, u.username as runner_name
-                           FROM performance_data p
-                                    JOIN users u ON p.runner_id = u.id
-                           ORDER BY p.test_date DESC"""
+                query = """SELECT p.*, u.username as runner_name 
+                          FROM performance_data p 
+                          JOIN users u ON p.runner_id = u.id 
+                          ORDER BY p.test_date DESC"""
                 df = pd.read_sql_query(query, conn)
             elif st.session_state.user_type == 'coach':
-                query = """SELECT p.*, u.username as runner_name
-                           FROM performance_data p
-                                    JOIN users u ON p.runner_id = u.id
-                           WHERE p.coach_id = ?
-                           ORDER BY p.test_date DESC"""
+                query = """SELECT p.*, u.username as runner_name 
+                          FROM performance_data p 
+                          JOIN users u ON p.runner_id = u.id 
+                          WHERE p.coach_id = ? 
+                          ORDER BY p.test_date DESC"""
                 df = pd.read_sql_query(query, conn, params=(st.session_state.user_id,))
             else:
-                query = """SELECT p.* \
-                           FROM performance_data p
-                           WHERE p.runner_id = ?
-                           ORDER BY p.test_date DESC"""
+                query = """SELECT p.* FROM performance_data p 
+                          WHERE p.runner_id = ? 
+                          ORDER BY p.test_date DESC"""
                 df = pd.read_sql_query(query, conn, params=(st.session_state.user_id,))
 
             conn.close()
@@ -769,8 +714,7 @@ def main():
                     runner_label = f" - {row.get('runner_name', 'Me')}" if 'runner_name' in row else ""
                     method_label = f" ({row.get('analysis_method', 'Unknown')})"
 
-                    with st.expander(
-                            f"📅 {row['test_date'][:19]}{runner_label}{method_label} | Max: {row['max_speed']:.2f} m/s"):
+                    with st.expander(f"📅 {row['test_date'][:19]}{runner_label}{method_label} | Max: {row['max_speed']:.2f} m/s"):
                         # Display metrics
                         col1, col2, col3 = st.columns(3)
                         col1.metric("Max Speed", f"{row['max_speed']:.2f} m/s")
@@ -815,8 +759,7 @@ def main():
                         coach_id = None
                         if new_user_type == "runner":
                             conn = sqlite3.connect('running_performance.db')
-                            coaches_df = pd.read_sql_query("SELECT id, username FROM users WHERE user_type='coach'",
-                                                           conn)
+                            coaches_df = pd.read_sql_query("SELECT id, username FROM users WHERE user_type='coach'", conn)
                             conn.close()
 
                             if not coaches_df.empty:
@@ -834,15 +777,11 @@ def main():
                 st.subheader("Existing Users")
                 conn = sqlite3.connect('running_performance.db')
                 users_df = pd.read_sql_query("""
-                                             SELECT u1.id,
-                                                    u1.username,
-                                                    u1.user_type,
-                                                    u2.username as coach_name,
-                                                    u1.created_at
-                                             FROM users u1
-                                                      LEFT JOIN users u2 ON u1.coach_id = u2.id
-                                             ORDER BY u1.created_at DESC
-                                             """, conn)
+                    SELECT u1.id, u1.username, u1.user_type, u2.username as coach_name, u1.created_at
+                    FROM users u1
+                    LEFT JOIN users u2 ON u1.coach_id = u2.id
+                    ORDER BY u1.created_at DESC
+                """, conn)
                 conn.close()
 
                 display_df = users_df[['username', 'user_type', 'coach_name', 'created_at']].copy()
@@ -853,7 +792,6 @@ def main():
                 st.dataframe(display_df, use_container_width=True)
             else:
                 st.info("This section is only available for administrators.")
-
 
 if __name__ == "__main__":
     main()
