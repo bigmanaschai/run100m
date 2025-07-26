@@ -1,0 +1,23 @@
+[theme]
+primaryColor = "#ff6b35"
+backgroundColor = "#f0f2f6"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#262730"
+font = "sans serif"
+
+[server]
+maxUploadSize = 500
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[runner]
+fastReruns = true
+
+[logger]
+level = "info"
+messageFormat = "%(asctime)s %(message)s"
