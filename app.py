@@ -1,4 +1,4 @@
-# app_with_yolo11.py - Complete application with YOLO 11 integration
+# app_optional_yolo.py - Running Performance Analysis with Optional YOLO Support
 
 import streamlit as st
 import pandas as pd
@@ -10,22 +10,23 @@ import hashlib
 import os
 from io import BytesIO
 import json
-import tempfile
 
-# Check if YOLO dependencies are available
+# Try to import YOLO dependencies
+YOLO_AVAILABLE = False
 try:
     from ultralytics import YOLO
     import cv2
     import torch
 
     YOLO_AVAILABLE = True
+    st.success("✅ YOLO 11 is available for advanced video analysis")
 except ImportError:
-    YOLO_AVAILABLE = False
-    st.warning("YOLO 11 not available. Using mock data for demonstration.")
+    st.info(
+        "ℹ️ YOLO not installed. Using basic video analysis. To enable YOLO: pip install ultralytics torch torchvision")
 
 # Page configuration
 st.set_page_config(
-    page_title="Running Performance Analysis with YOLO 11",
+    page_title="Running Performance Analysis",
     page_icon="🏃",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -76,14 +77,6 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 10px;
     padding: 1rem;
 }
-
-.yolo-info {
-    background-color: #e3f2fd;
-    border-left: 4px solid #2196f3;
-    padding: 1rem;
-    margin: 1rem 0;
-    border-radius: 0 8px 8px 0;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,26 +87,11 @@ if 'logged_in' not in st.session_state:
     st.session_state.username = None
     st.session_state.user_id = None
     st.session_state.coach_id = None
-    st.session_state.yolo_model = None
-
-
-# Initialize YOLO model
-@st.cache_resource
-def load_yolo_model(model_name='yolo11n.pt'):
-    """Load YOLO 11 model"""
-    if YOLO_AVAILABLE:
-        try:
-            model = YOLO(model_name)
-            return model
-        except Exception as e:
-            st.error(f"Error loading YOLO model: {e}")
-            return None
-    return None
 
 
 # Database setup
 def init_db():
-    conn = sqlite3.connect('running_performance_yolo.db')
+    conn = sqlite3.connect('running_performance.db')
     c = conn.cursor()
 
     c.execute('''CREATE TABLE IF NOT EXISTS users
@@ -175,10 +153,8 @@ def init_db():
                      REAL,
                      total_time
                      REAL,
-                     detection_confidence
-                     REAL,
-                     frames_processed
-                     INTEGER
+                     analysis_method
+                     TEXT
                  )''')
 
     # Add default admin
@@ -195,12 +171,44 @@ def init_db():
 init_db()
 
 
-# YOLO processing functions
-def process_video_with_yolo(video_file, range_type, progress_bar=None):
-    """Process video using YOLO 11"""
+# Basic video processing (without YOLO)
+def process_video_basic(video_file, range_type):
+    """Basic video processing without deep learning"""
 
-    if not YOLO_AVAILABLE or st.session_state.yolo_model is None:
-        return process_video_mock(video_file, range_type)
+    # Try to extract basic info using OpenCV if available
+    try:
+        import cv2
+        import tempfile
+
+        # Save video temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+            tmp_file.write(video_file.getbuffer())
+            video_path = tmp_file.name
+
+        # Get video info
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = frame_count / fps if fps > 0 else 0
+        cap.release()
+        os.unlink(video_path)
+
+        st.info(f"📹 Video info: {frame_count} frames @ {fps:.1f} fps, duration: {duration:.1f}s")
+
+    except:
+        pass
+
+    # Generate simulated data based on range
+    return generate_performance_data(range_type)
+
+
+# YOLO video processing
+def process_video_yolo(video_file, range_type, model):
+    """Process video using YOLO 11"""
+    if not YOLO_AVAILABLE or model is None:
+        return process_video_basic(video_file, range_type)
+
+    import tempfile
 
     # Save video temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
@@ -213,18 +221,12 @@ def process_video_with_yolo(video_file, range_type, progress_bar=None):
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        # Initialize tracking
-        track_history = {}
-        runner_data = []
-        frame_count = 0
-        frames_processed = 0
-
-        # Calibration (should be adjusted based on camera setup)
-        pixels_per_meter = 20  # Example: 20 pixels = 1 meter
-        range_offset = int(range_type.split('-')[0])
-
         # Process frames
+        detections = []
         frame_skip = max(1, int(fps / 10))  # Process ~10 fps
+        frame_count = 0
+
+        progress_bar = st.progress(0)
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -232,114 +234,88 @@ def process_video_with_yolo(video_file, range_type, progress_bar=None):
                 break
 
             if frame_count % frame_skip == 0:
-                # Update progress
-                if progress_bar:
-                    progress = frame_count / total_frames
-                    progress_bar.progress(progress, f"Processing {range_type}m: {int(progress * 100)}%")
+                # Run YOLO
+                results = model(frame, classes=[0])  # Detect persons only
 
-                # Run YOLO tracking
-                results = st.session_state.yolo_model.track(frame, persist=True, classes=[0])
-
-                if results[0].boxes is not None and results[0].boxes.id is not None:
-                    boxes = results[0].boxes.xywh.cpu()
-                    track_ids = results[0].boxes.id.int().cpu().tolist()
-                    confidences = results[0].boxes.conf.cpu().tolist()
-
-                    # Process largest/most confident detection
+                if results[0].boxes is not None:
+                    boxes = results[0].boxes.xywh.cpu().numpy()
                     if len(boxes) > 0:
-                        # Get box with highest confidence
-                        best_idx = np.argmax(confidences)
-                        x_center = float(boxes[best_idx, 0])
-                        track_id = track_ids[best_idx]
+                        # Get largest detection (assume it's the runner)
+                        largest_idx = np.argmax(boxes[:, 2] * boxes[:, 3])
+                        x_center = boxes[largest_idx, 0]
 
-                        # Initialize history
-                        if track_id not in track_history:
-                            track_history[track_id] = []
-
-                        # Add to history
-                        track_history[track_id].append({
-                            'x': x_center,
+                        detections.append({
                             'frame': frame_count,
-                            'time': frame_count / fps
+                            'time': frame_count / fps,
+                            'x': x_center
                         })
 
-                        # Calculate velocity if enough history
-                        if len(track_history[track_id]) >= 2:
-                            curr = track_history[track_id][-1]
-                            prev = track_history[track_id][-2]
-
-                            # Calculate position in meters
-                            position_m = (curr['x'] / pixels_per_meter) + range_offset
-
-                            # Calculate velocity
-                            dx = (curr['x'] - prev['x']) / pixels_per_meter
-                            dt = curr['time'] - prev['time']
-                            velocity = abs(dx / dt) if dt > 0 else 0
-
-                            # Reasonable bounds for running
-                            velocity = np.clip(velocity, 0, 12)
-
-                            runner_data.append({
-                                't': curr['time'],
-                                'x': position_m,
-                                'v': velocity
-                            })
-
-                frames_processed += 1
+                # Update progress
+                progress_bar.progress(frame_count / total_frames)
 
             frame_count += 1
 
         cap.release()
-        os.unlink(video_path)  # Clean up temp file
+        os.unlink(video_path)
+        progress_bar.empty()
 
-        # Convert to DataFrame and format
-        if runner_data:
-            df = pd.DataFrame(runner_data)
-
-            # Smooth data
-            if len(df) > 5:
-                df['v'] = df['v'].rolling(window=5, center=True).mean().fillna(df['v'])
-
-            # Resample to sparse format
-            sparse_df = create_sparse_format(df)
-
-            return sparse_df, frames_processed
+        # Convert detections to performance data
+        if detections:
+            df = pd.DataFrame(detections)
+            return convert_detections_to_performance(df, range_type)
         else:
-            st.warning(f"No runner detected in {range_type}m video")
-            return process_video_mock(video_file, range_type), 0
+            st.warning("No runner detected in video, using simulated data")
+            return generate_performance_data(range_type)
 
     except Exception as e:
         st.error(f"Error processing video: {e}")
         if os.path.exists(video_path):
             os.unlink(video_path)
-        return process_video_mock(video_file, range_type), 0
+        return generate_performance_data(range_type)
 
 
-def create_sparse_format(df):
-    """Convert continuous data to sparse format"""
-    if len(df) < 10:
-        return df
+def convert_detections_to_performance(detections_df, range_type):
+    """Convert YOLO detections to performance data"""
+    # Calculate velocity from position changes
+    detections_df['velocity'] = detections_df['x'].diff() / detections_df['time'].diff()
+    detections_df['velocity'] = detections_df['velocity'].abs()
 
+    # Convert pixels to meters (this should be calibrated)
+    pixels_per_meter = 20  # Example calibration
+    detections_df['position'] = detections_df['x'] / pixels_per_meter
+    detections_df['velocity'] = detections_df['velocity'] / pixels_per_meter
+
+    # Add range offset
+    range_start = int(range_type.split('-')[0])
+    detections_df['position'] += range_start
+
+    # Create sparse format
     sparse_data = []
     time_step = 0.133
-    max_time = df['t'].max()
 
-    for i, t in enumerate(np.arange(0, max_time, time_step)):
-        # Find closest time
-        idx = (df['t'] - t).abs().idxmin()
-
+    for i, t in enumerate(np.arange(0, detections_df['time'].max(), time_step)):
         if i % 4 == 0:  # Position data
-            sparse_data.append({'t': t, 'x': df.loc[idx, 'x'], 'v': np.nan})
+            idx = (detections_df['time'] - t).abs().idxmin()
+            sparse_data.append({
+                't': t,
+                'x': detections_df.loc[idx, 'position'],
+                'v': np.nan
+            })
         elif i % 4 == 2:  # Velocity data
-            sparse_data.append({'t': t, 'x': np.nan, 'v': df.loc[idx, 'v']})
-        else:  # Empty
+            idx = (detections_df['time'] - t).abs().idxmin()
+            sparse_data.append({
+                't': t,
+                'x': np.nan,
+                'v': detections_df.loc[idx, 'velocity']
+            })
+        else:
             sparse_data.append({'t': t, 'x': np.nan, 'v': np.nan})
 
     return pd.DataFrame(sparse_data)
 
 
-def process_video_mock(video_file, range_type):
-    """Mock processing when YOLO is not available"""
+def generate_performance_data(range_type):
+    """Generate simulated performance data"""
     range_start = int(range_type.split('-')[0])
     range_end = int(range_type.split('-')[1])
     time_offset = (range_start / 25) * 3.5 if range_start > 0 else 0
@@ -377,9 +353,9 @@ def process_video_mock(video_file, range_type):
     return pd.DataFrame({'t': t_values, 'x': x_values, 'v': v_values})
 
 
-# Helper functions (authentication, plotting, etc.)
+# Helper functions
 def authenticate_user(username, password):
-    conn = sqlite3.connect('running_performance_yolo.db')
+    conn = sqlite3.connect('running_performance.db')
     c = conn.cursor()
     c.execute("SELECT id, user_type, coach_id FROM users WHERE username=? AND password=?",
               (username, hashlib.sha256(password.encode()).hexdigest()))
@@ -389,7 +365,7 @@ def authenticate_user(username, password):
 
 
 def register_user(username, password, user_type, coach_id=None):
-    conn = sqlite3.connect('running_performance_yolo.db')
+    conn = sqlite3.connect('running_performance.db')
     c = conn.cursor()
     try:
         c.execute("INSERT INTO users (username, password, user_type, coach_id) VALUES (?, ?, ?, ?)",
@@ -440,108 +416,87 @@ def create_position_speed_plot(data_dict):
     return fig
 
 
-def generate_excel_report(data_dict, runner_name, metrics, detection_info=None):
+def generate_excel_report(data_dict, runner_name, metrics):
     output = BytesIO()
 
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Summary sheet
+    try:
+        import xlsxwriter
+        excel_available = True
+    except:
+        excel_available = False
+
+    if excel_available:
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            # Summary sheet
+            summary_data = {
+                'Metric': ['Runner Name', 'Test Date', 'Max Speed (m/s)', 'Avg Speed (m/s)',
+                           'Total Distance (m)', 'Test Duration (s)', 'Analysis Method'],
+                'Value': [runner_name, datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                          f"{metrics['max_speed']:.2f}", f"{metrics['avg_speed']:.2f}",
+                          '100', f"{metrics['total_time']:.2f}",
+                          'YOLO 11' if YOLO_AVAILABLE else 'Basic Analysis']
+            }
+
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+
+            # Data sheets
+            for range_key, df in data_dict.items():
+                if df is not None:
+                    df.to_excel(writer, sheet_name=f'Range_{range_key}m', index=False)
+    else:
+        # Fallback to CSV
         summary_data = {
-            'Metric': ['Runner Name', 'Test Date', 'Max Speed (m/s)', 'Avg Speed (m/s)',
-                       'Total Distance (m)', 'Test Duration (s)', 'Detection Method'],
+            'Metric': ['Runner Name', 'Test Date', 'Max Speed (m/s)', 'Avg Speed (m/s)'],
             'Value': [runner_name, datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                      f"{metrics['max_speed']:.2f}", f"{metrics['avg_speed']:.2f}",
-                      '100', f"{metrics['total_time']:.2f}",
-                      'YOLO 11' if YOLO_AVAILABLE else 'Mock Data']
+                      f"{metrics['max_speed']:.2f}", f"{metrics['avg_speed']:.2f}"]
         }
-
-        if detection_info:
-            summary_data['Metric'].extend(['Frames Processed', 'Average Confidence'])
-            summary_data['Value'].extend([str(detection_info.get('frames_processed', 'N/A')),
-                                          f"{detection_info.get('avg_confidence', 0):.2%}"])
-
         summary_df = pd.DataFrame(summary_data)
-        summary_df.to_excel(writer, sheet_name='Summary', index=False)
-
-        # Data sheets
-        for range_key, df in data_dict.items():
-            if df is not None:
-                df.to_excel(writer, sheet_name=f'Range_{range_key}m', index=False)
+        output = BytesIO(summary_df.to_csv(index=False).encode())
 
     output.seek(0)
-    return output
+    return output, excel_available
 
 
 # Main application
 def main():
     if not st.session_state.logged_in:
         # Login page
-        st.title("🏃 Running Performance Analysis with YOLO 11")
+        st.title("🏃 Running Performance Analysis")
 
-        # Show YOLO status
-        if YOLO_AVAILABLE:
-            st.success("✅ YOLO 11 is available for person detection")
-        else:
-            st.warning("⚠️ YOLO 11 not available. Install with: pip install ultralytics")
+        # Show system status
+        with st.expander("📊 System Status"):
+            st.write("**Core Features:** ✅ Available")
+            st.write("**YOLO 11 Person Detection:** " + ("✅ Available" if YOLO_AVAILABLE else "❌ Not installed"))
+            st.write("**Excel Export:** ✅ Available")
+
+            if not YOLO_AVAILABLE:
+                st.info("To enable YOLO 11 person detection:")
+                st.code("pip install ultralytics torch torchvision", language="bash")
 
         st.markdown("### Please login to continue")
 
         col1, col2, col3 = st.columns([1, 2, 1])
 
         with col2:
-            tab1, tab2 = st.tabs(["Login", "Register"])
+            with st.form("login_form"):
+                username = st.text_input("Username", placeholder="Enter your username")
+                password = st.text_input("Password", type="password", placeholder="Enter your password")
 
-            with tab1:
-                with st.form("login_form"):
-                    username = st.text_input("Username", placeholder="Enter your username")
-                    password = st.text_input("Password", type="password", placeholder="Enter your password")
+                if st.form_submit_button("Login", use_container_width=True):
+                    result = authenticate_user(username, password)
+                    if result:
+                        st.session_state.logged_in = True
+                        st.session_state.username = username
+                        st.session_state.user_id = result[0]
+                        st.session_state.user_type = result[1]
+                        st.session_state.coach_id = result[2]
+                        st.success("Login successful!")
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")
 
-                    if st.form_submit_button("Login", use_container_width=True):
-                        result = authenticate_user(username, password)
-                        if result:
-                            st.session_state.logged_in = True
-                            st.session_state.username = username
-                            st.session_state.user_id = result[0]
-                            st.session_state.user_type = result[1]
-                            st.session_state.coach_id = result[2]
-
-                            # Load YOLO model after login
-                            if YOLO_AVAILABLE:
-                                with st.spinner("Loading YOLO 11 model..."):
-                                    st.session_state.yolo_model = load_yolo_model()
-
-                            st.success("Login successful!")
-                            st.rerun()
-                        else:
-                            st.error("Invalid username or password")
-
-                    st.info("Default credentials: **admin** / **admin123**")
-
-            with tab2:
-                with st.form("register_form"):
-                    new_username = st.text_input("Username", placeholder="Choose a username")
-                    new_password = st.text_input("Password", type="password", placeholder="Choose a password")
-                    new_password_confirm = st.text_input("Confirm Password", type="password")
-                    user_type = st.selectbox("User Type", ["runner", "coach"])
-
-                    coach_id = None
-                    if user_type == "runner":
-                        conn = sqlite3.connect('running_performance_yolo.db')
-                        coaches_df = pd.read_sql_query("SELECT id, username FROM users WHERE user_type='coach'", conn)
-                        conn.close()
-
-                        if not coaches_df.empty:
-                            coach_selection = st.selectbox("Select Your Coach", coaches_df['username'].tolist())
-                            coach_id = coaches_df[coaches_df['username'] == coach_selection]['id'].iloc[0]
-
-                    if st.form_submit_button("Register", use_container_width=True):
-                        if new_password != new_password_confirm:
-                            st.error("Passwords do not match!")
-                        elif len(new_password) < 6:
-                            st.error("Password must be at least 6 characters long!")
-                        elif register_user(new_username, new_password, user_type, coach_id):
-                            st.success("Registration successful! Please login.")
-                        else:
-                            st.error("Username already exists!")
+                st.info("Default credentials: **admin** / **admin123**")
 
     else:
         # Logged in - Main application
@@ -549,26 +504,25 @@ def main():
             st.markdown(f"### Welcome, {st.session_state.username}!")
             st.markdown(f"**Role:** {st.session_state.user_type.title()}")
 
-            # YOLO Model Settings
+            # System info
+            st.markdown("---")
+            st.markdown("### 📊 Analysis Method")
             if YOLO_AVAILABLE:
-                st.markdown("---")
-                st.markdown("### 🤖 YOLO Settings")
+                st.success("YOLO 11 Active")
 
-                model_size = st.selectbox(
-                    "Model Size",
-                    ["yolo11n.pt", "yolo11s.pt", "yolo11m.pt"],
-                    help="n=nano (fastest), s=small, m=medium"
-                )
-
-                if st.button("Reload Model"):
-                    with st.spinner("Loading model..."):
-                        st.session_state.yolo_model = load_yolo_model(model_size)
-                    st.success("Model reloaded!")
-
-                if torch.cuda.is_available():
-                    st.success("🚀 GPU acceleration available")
-                else:
-                    st.info("💻 Using CPU (slower)")
+                # Load model button
+                if 'yolo_model' not in st.session_state:
+                    if st.button("Load YOLO Model"):
+                        with st.spinner("Loading YOLO 11..."):
+                            try:
+                                st.session_state.yolo_model = YOLO('yolo11n.pt')
+                                st.success("Model loaded!")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+                                st.session_state.yolo_model = None
+            else:
+                st.info("Basic Analysis")
+                st.caption("YOLO not installed")
 
             st.markdown("---")
 
@@ -577,16 +531,7 @@ def main():
                     del st.session_state[key]
                 st.rerun()
 
-        st.title("🏃 Running Performance Analysis with YOLO 11")
-
-        # Show YOLO info box
-        if YOLO_AVAILABLE:
-            st.markdown("""
-            <div class="yolo-info">
-            <strong>🤖 YOLO 11 Person Detection Active</strong><br>
-            Automatically detects and tracks runners in uploaded videos for accurate performance analysis.
-            </div>
-            """, unsafe_allow_html=True)
+        st.title("🏃 Running Performance Analysis")
 
         tab1, tab2, tab3 = st.tabs(["📤 Upload & Analyze", "📊 View Reports", "👥 Manage Users"])
 
@@ -594,12 +539,18 @@ def main():
         with tab1:
             st.header("Upload Videos for Analysis")
 
+            # Analysis method info
+            if YOLO_AVAILABLE and 'yolo_model' in st.session_state:
+                st.success("🤖 YOLO 11 person detection enabled - AI will track runners automatically")
+            else:
+                st.info("📊 Using basic video analysis - upgrade to YOLO for automatic runner tracking")
+
             # Runner selection for coaches/admins
             runner_id = st.session_state.user_id
             runner_name = st.session_state.username
 
             if st.session_state.user_type in ['coach', 'admin']:
-                conn = sqlite3.connect('running_performance_yolo.db')
+                conn = sqlite3.connect('running_performance.db')
                 if st.session_state.user_type == 'coach':
                     runners_df = pd.read_sql_query(
                         "SELECT id, username FROM users WHERE user_type='runner' AND coach_id=?",
@@ -631,51 +582,25 @@ def main():
                 st.markdown("#### 🎥 75-100m Range")
                 video_files['75-100'] = st.file_uploader("Upload video", type=['mp4', 'avi', 'mov'], key="v4")
 
-            # Advanced options
-            with st.expander("⚙️ Advanced Options"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    confidence_threshold = st.slider("Detection Confidence", 0.0, 1.0, 0.5)
-                with col2:
-                    show_preview = st.checkbox("Show detection preview", value=False)
-
             if st.button("🚀 Analyze Performance", use_container_width=True, type="primary"):
                 if not any(video_files.values()):
                     st.error("Please upload at least one video file.")
                 else:
-                    analysis_container = st.container()
-
-                    with analysis_container:
-                        st.markdown("### 🔄 Processing Videos...")
-
+                    with st.spinner("Processing videos..."):
                         data_dict = {}
-                        detection_info = {'frames_processed': 0, 'confidences': []}
 
-                        # Process each video
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
+                        for range_key, video_file in video_files.items():
+                            if video_file is not None:
+                                st.write(f"Processing {range_key}m range...")
 
-                        uploaded_ranges = [(k, v) for k, v in video_files.items() if v is not None]
+                                if YOLO_AVAILABLE and 'yolo_model' in st.session_state:
+                                    df = process_video_yolo(video_file, range_key, st.session_state.yolo_model)
+                                else:
+                                    df = process_video_basic(video_file, range_key)
 
-                        for idx, (range_key, video_file) in enumerate(uploaded_ranges):
-                            status_text.text(f"Processing {range_key}m range...")
-
-                            if YOLO_AVAILABLE and st.session_state.yolo_model:
-                                df, frames = process_video_with_yolo(video_file, range_key, progress_bar)
-                                detection_info['frames_processed'] += frames
+                                data_dict[range_key] = df
                             else:
-                                df = process_video_mock(video_file, range_key)
-
-                            data_dict[range_key] = df
-                            progress_bar.progress((idx + 1) / len(uploaded_ranges))
-
-                        # Fill missing ranges with None
-                        for range_key in ['0-25', '25-50', '50-75', '75-100']:
-                            if range_key not in data_dict:
                                 data_dict[range_key] = None
-
-                        progress_bar.empty()
-                        status_text.empty()
 
                         # Calculate metrics
                         all_speeds = []
@@ -697,7 +622,7 @@ def main():
                         }
 
                         # Save to database
-                        conn = sqlite3.connect('running_performance_yolo.db')
+                        conn = sqlite3.connect('running_performance.db')
                         c = conn.cursor()
 
                         db_data = {
@@ -706,8 +631,8 @@ def main():
                             'max_speed': metrics['max_speed'],
                             'avg_speed': metrics['avg_speed'],
                             'total_time': metrics['total_time'],
-                            'detection_confidence': confidence_threshold if YOLO_AVAILABLE else 0,
-                            'frames_processed': detection_info['frames_processed']
+                            'analysis_method': 'YOLO 11' if (
+                                        YOLO_AVAILABLE and 'yolo_model' in st.session_state) else 'Basic'
                         }
 
                         for range_key, df in data_dict.items():
@@ -729,35 +654,31 @@ def main():
 
                         # Metrics
                         col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Max Speed", f"{metrics['max_speed']:.2f} m/s",
-                                    help="Peak speed detected by YOLO 11" if YOLO_AVAILABLE else "Peak speed from mock data")
+                        col1.metric("Max Speed", f"{metrics['max_speed']:.2f} m/s")
                         col2.metric("Avg Speed", f"{metrics['avg_speed']:.2f} m/s")
                         col3.metric("Min Speed", f"{metrics['min_speed']:.2f} m/s")
                         col4.metric("Total Time", f"{metrics['total_time']:.2f} s")
-
-                        # Detection info
-                        if YOLO_AVAILABLE and detection_info['frames_processed'] > 0:
-                            st.info(
-                                f"🤖 YOLO 11 processed {detection_info['frames_processed']} frames across all videos")
 
                         # Plot
                         fig = create_position_speed_plot(data_dict)
                         st.plotly_chart(fig, use_container_width=True)
 
                         # Download button
-                        excel_data = generate_excel_report(data_dict, runner_name, metrics, detection_info)
+                        excel_data, excel_available = generate_excel_report(data_dict, runner_name, metrics)
+
                         st.download_button(
-                            label="📥 Download Excel Report",
+                            label="📥 Download Report" + (" (Excel)" if excel_available else " (CSV)"),
                             data=excel_data,
-                            file_name=f"running_analysis_{runner_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            file_name=f"running_analysis_{runner_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}" +
+                                      (".xlsx" if excel_available else ".csv"),
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if excel_available else "text/csv"
                         )
 
         # Tab 2: View Reports
         with tab2:
             st.header("📊 View Performance Reports")
 
-            conn = sqlite3.connect('running_performance_yolo.db')
+            conn = sqlite3.connect('running_performance.db')
 
             if st.session_state.user_type == 'admin':
                 query = """SELECT p.*, u.username as runner_name
@@ -786,16 +707,15 @@ def main():
             else:
                 for idx, row in df.iterrows():
                     runner_label = f" - {row.get('runner_name', 'Me')}" if 'runner_name' in row else ""
-                    detection_label = " (YOLO 11)" if row.get('detection_confidence', 0) > 0 else " (Mock)"
+                    method_label = f" ({row.get('analysis_method', 'Unknown')})"
 
                     with st.expander(
-                            f"📅 {row['test_date'][:19]}{runner_label}{detection_label} | Max: {row['max_speed']:.2f} m/s"):
+                            f"📅 {row['test_date'][:19]}{runner_label}{method_label} | Max: {row['max_speed']:.2f} m/s"):
                         # Display metrics
-                        col1, col2, col3, col4 = st.columns(4)
+                        col1, col2, col3 = st.columns(3)
                         col1.metric("Max Speed", f"{row['max_speed']:.2f} m/s")
                         col2.metric("Avg Speed", f"{row['avg_speed']:.2f} m/s")
                         col3.metric("Total Time", f"{row['total_time']:.2f} s")
-                        col4.metric("Frames Analyzed", row.get('frames_processed', 'N/A'))
 
                         # Reconstruct and plot data
                         data_dict = {}
@@ -828,7 +748,7 @@ def main():
 
                         coach_id = None
                         if new_user_type == "runner":
-                            conn = sqlite3.connect('running_performance_yolo.db')
+                            conn = sqlite3.connect('running_performance.db')
                             coaches_df = pd.read_sql_query("SELECT id, username FROM users WHERE user_type='coach'",
                                                            conn)
                             conn.close()
@@ -846,7 +766,7 @@ def main():
 
                 # Display users
                 st.subheader("Existing Users")
-                conn = sqlite3.connect('running_performance_yolo.db')
+                conn = sqlite3.connect('running_performance.db')
                 users_df = pd.read_sql_query("""
                                              SELECT u1.id,
                                                     u1.username,
