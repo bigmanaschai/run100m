@@ -6,18 +6,11 @@ textColor = "#262730"
 font = "sans serif"
 
 [server]
-maxUploadSize = 500
-enableCORS = false
-enableXsrfProtection = true
-
-[browser]
-gatherUsageStats = false
-serverAddress = "localhost"
-serverPort = 8501
+maxUploadSize = 200
+maxMessageSize = 200
 
 [runner]
-fastReruns = true
+magicEnabled = false
 
-[logger]
-level = "info"
-messageFormat = "%(asctime)s %(message)s"
+[client]
+showErrorDetails = true
